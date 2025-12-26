@@ -1,61 +1,10 @@
 (() => {
     // =========================
-    // CONFIG
+    // DEFAULT_CONFIG
     // =========================
-    const CONFIG = {
-        API_JSON: {
-            DATA: {
-            }
-        },
-
-        ITEM_SELECTOR: ".price",
-
-        MAPPING: {
-            101: "即決落札可",
-            102: "成約",
-            103: "キャンセル",
-            201: "商談受付中",
-            202: "他社商談中",
-            203: "商談申込済",
-            204: "自社商談中",
-            205: "成約",
-            206: "商談受付中",
-            207: "商談受付中",
-            208: "商談受付中",
-            209: "商談成約",
-            210: "商談成約",
-            301: "仮出品",
-            302: "未セリ",
-            303: "成約",
-            304: "流れ",
-            305: "出品取消",
-            306: "キャンセル",
-            307: "成約",
-            308: "成約",
-            401: "商談受付中",
-            402: "他社商談中",
-            403: "商談申込済",
-            404: "自社商談中",
-            405: "商談成約",
-            406: "商談受付中",
-            407: "商談キャンセル",
-            408: "受付終了",
-            409: "商談不可",
-            410: "商談受付中",
-            411: "商談成約",
-            412: "商談成約",
-        },
-
-        // Phương thức này sẽ extract list được lấy từ response api
-        GET_LIST_FROM_JSON: (json) => json?.DATA?.CAR_LIST || [],
-
-        // Phương thức này sẽ lấy ra data của field tương ứng từ response api
-        GET_PATTERN_FIELD: (apiItem) => Number(apiItem.STATUS),
-
-        SCROLL_CONTAINER_SELECTOR: null,
-
+    const DEFAULT_CONFIG = {
+        SCROLL_CONTAINER_SELECTOR: '',
         COMPARE_MODE: "contains", // "exact" | "contains"
-
         // + Phần quan trọng nhất trong virtual validator. Bạn phải có cách xác định:
         // - Row DOM này đang đại diện cho item thứ mấy trong Api List
         // + TanStack Virtual thường set:
@@ -63,19 +12,14 @@
         // - style transform: translateY(...)
         // + Ưu tiên đọc từ attribute
         ROW_INDEX_ATTR: "data-index",
-
         HIGHLIGHT_WRONG_STYLE:
             "outline: 3px solid #ff3b30; box-shadow: 0 0 0 4px rgba(255,59,48,0.2); border-radius: 10px; padding: 10px",
-
         HIGHLIGHT_UNKNOWN_STYLE:
             "outline: 3px solid #ff9500; box-shadow: 0 0 0 4px rgba(255,149,0,0.18); border-radius: 10px; padding: 10px",
-
         // Mỗi lần scroll xuống bao nhiêu px
         SCROLL_STEP: 350,
-
         // Scroll xong đợi bao lâu để DOM update (tanstack virtual cần thời gian render)
-        SETTE_MS: 120,
-
+        SETTLE_MS: 120,
         // Giới hạn để tránh infinite loop nếu scroll container lạ
         MAX_LOOP: 300,
     };
@@ -83,44 +27,187 @@
     const normalize = (text = "") => text.toString().replace(/\s+/g, " ").trim();
 
     const compareText = (actual = "", expected = "") => {
-        if (CONFIG.COMPARE_MODE === "exact") return actual?.trim() === expected?.trim();
-        return actual?.trim().includes(expected?.trim());
+        const textActual = normalize(actual);
+        const textExpected = normalize(expected);
+
+        if (COMPARE_MODE === "exact") return textActual === textExpected;
+
+        return textActual.includes(textExpected);
     };
+
+    const promptRequired = (label = "", placeholderExample = "") => {
+        while (true) {
+            const input = prompt(`${label} \r\n\n Example:\n ${placeholderExample} \r\n\n(Required)`);
+
+            if (input === null || input === undefined) return null;
+
+            if (input.trim() !== "") return input.trim();
+
+            alert("This field is required. Please enter a value.");
+        }
+    }
+
+    const promptOptional = (label = "", defaultValue = "", placeholderExample = "") => {
+        const hint =
+            placeholderExample?.trim()
+                ? `\r\n\n Example:\n ${placeholderExample}`
+                : "";
+
+        const input = prompt(
+            `${label} \r\n\n Default (press Enter to keep): \n${defaultValue}${hint} \r\n\n(Optional)`,
+            defaultValue
+        );
+
+        if (input === null || input === undefined) return null;
+
+        return input.trim() === "" ? defaultValue : input.trim();
+    }
+
+    const parseJsonRequired = (label = "", example = "") => {
+        while (true) {
+            const text = promptRequired(label, example);
+
+            if (input === null || input === undefined) return null;
+
+            try {
+                const parsed = JSON.parse(text);
+                return parsed;
+            } catch (e) {
+                alert(`Invalid JSON. Please try again.\r\nError:\n${e.message}`);
+            }
+        }
+    }
+
+    const parseJsonObjectRequired = (label = "", example = "") => {
+        const parsed = parseJsonRequired(label, example);
+
+        if (parsed === null || parsed === undefined) return null;
+
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) return parsed;
+
+        alert("This JSON must be an object (e.g. { \"101\": \"text\" }).");
+
+        return parseJsonObjectRequired(label, example);
+    }
+
+    // =========================
+    // Safe path getter
+    // =========================
+    const getByPath = (obj, path) => {
+        if (!path) return obj;
+
+        const parts = path.split(".").map((p) => p.trim()).filter(Boolean);
+
+        let cur = obj;
+
+        for (const key of parts) {
+            if (cur === null || cur === undefined) return undefined;
+            cur = cur[key];
+        }
+
+        return cur;
+    }
+
+    // VALUES REQUIRED
+    const API_JSON = parseJsonRequired(
+        "1) Paste API JSON (full response)",
+        `{ "DATA" :{ "CAR_LIST": [ { "STATUS": 101 }, { "STATUS": 201 } ] } }`
+    );
+    if (API_JSON === null || API_JSON === undefined) return;
+
+    const ITEM_SELECTOR = promptRequired(
+        "2) Enter ITEM SELECTOR (selector of the pattern text element)",
+        `.price \r\n .status-badge \r\n [data-col="status"]`
+    );
+    if (ITEM_SELECTOR === null || ITEM_SELECTOR === undefined) return;
+
+
+    const MAPPING = parseJsonObjectRequired(
+        "3) Paste MAPPING JSON (statusCode -> expectedText)",
+        `{ "101": "即決落札可", "102": "成約", "201": "商談受付中" }`
+    );
+    if (MAPPING === null || MAPPING === undefined) return;
+
+    const LIST_PATH = promptRequired(
+        "4) Enter list path in API JSON (GET_LIST_FROM_JSON)",
+        `DATA.CAR_LIST \r\n items \r\n result.list`
+    );
+    if (LIST_PATH === null || LIST_PATH === undefined) return;
+
+    const STATUS_FIELD_PATH = promptRequired(
+        "5) Enter status field path in each list item (GET_PATTERN_FIELD)",
+        `STATUS \r\n status \r\n meta.status`
+    );
+    if (STATUS_FIELD_PATH === null || STATUS_FIELD_PATH === undefined) return;
+
+    // VALUES OPTIONAL
+    const SCROLL_CONTAINER_SELECTOR = promptOptional(
+        "6) (Optional) Scroll Container Selector (Leave Default to Auto Detect)",
+        DEFAULT_CONFIG.SCROLL_CONTAINER_SELECTOR,
+        `.table-scroll \r\n #tableContainer`
+    );
+    if (SCROLL_CONTAINER_SELECTOR === null || SCROLL_CONTAINER_SELECTOR === undefined) return;
+
+    const ROW_INDEX_ATTR = promptOptional(
+        "7) (Optional) Row Index Attribute (Used By Virtual Rows)",
+        DEFAULT_CONFIG.ROW_INDEX_ATTR,
+        `data-index \r\n data-row-index \r\ndata-virtual-index`
+    );
+    if (ROW_INDEX_ATTR === null || ROW_INDEX_ATTR === undefined) return;
+
+    const COMPARE_MODE = promptOptional(
+        "8) (Optional) Compare Mode",
+        DEFAULT_CONFIG.COMPARE_MODE,
+        `contains \r\n exact`
+    );
+    if (COMPARE_MODE === null || COMPARE_MODE === undefined) return;
+
+    const SCROLL_STEP = Number(
+        promptOptional("9) (Optional) Scroll Step (px)", String(DEFAULT_CONFIG.SCROLL_STEP), "350")
+    );
+
+    const SETTLE_MS = Number(
+        promptOptional("10) (Optional) Settle Time After Scroll (ms)", String(DEFAULT_CONFIG.SETTLE_MS), "120")
+    );
+
+    const MAX_LOOP = Number(
+        promptOptional("11) (Optional) Max Scroll Loops (safety)", String(DEFAULT_CONFIG.MAX_LOOP), "300")
+    );
+
+    // =========================
+    // Build functions from paths
+    // =========================
+    const GET_LIST_FROM_JSON = (json) => getByPath(json, LIST_PATH) || [];
+    const GET_PATTERN_FIELD = (apiItem) => (getByPath(apiItem, STATUS_FIELD_PATH));
 
     // =========================
     // Extract list array
     // =========================
-    // const apiList = GET_LIST_FROM_JSON(API_JSON);
-    const apiList = CONFIG.GET_LIST_FROM_JSON(CONFIG.API_JSON);
-    if (!apiList.length) {
-        console.warn("❌ Không lấy được list từ JSON. Vui lòng kiểm tra lại data của bạn.");
-        console.log("DATA JSON:", CONFIG.API_JSON);
+    const apiList = GET_LIST_FROM_JSON(API_JSON);
+    if (!Array.isArray(apiList) || !apiList.length) {
+        console.warn("❌ Không lấy được list từ API_JSON. Vui lòng kiểm tra lại data của bạn.");
+        console.log("API_JSON:", API_JSON);
+        console.log("Extracted value:", apiList);
         return;
     }
 
     // =========================
     // Read DOM list
     // =========================
-    const listItemData = Array.from(document.querySelectorAll(CONFIG.ITEM_SELECTOR));
+    const listItemData = Array.from(document.querySelectorAll(ITEM_SELECTOR));
     if (!listItemData.length) {
-        console.warn(`❌ Không tìm thấy DOM items với selector "${CONFIG.ITEM_SELECTOR}".`);
+        console.warn(`❌ Không tìm thấy DOM items với selector "${ITEM_SELECTOR}".`);
         return;
     }
 
     // =========================
     // Detect scroll container
     // =========================
-    function findScrollContainer() {
-        if (CONFIG.SCROLL_CONTAINER_SELECTOR) {
-            return document.querySelector(CONFIG.SCROLL_CONTAINER_SELECTOR);
-        }
-
-        // Tìm 1 cell bất kỳ có ITEM_SELECTOR
-        const anyCell = document.querySelector(CONFIG.ITEM_SELECTOR);
-        if (!anyCell) return null;
+    function findScrollContainer(cellElement) {
+        if (!cellElement) return null;
 
         // Đi lên cha (parent) cho đến khi gặp element có thể scroll
-        let el = anyCell.parentElement;
+        let el = cellElement.parentElement;
         while (el && el !== document.body) {
             // Script sẽ kiểm tra:
             // + overflowY là auto hoặc scroll
@@ -140,10 +227,25 @@
         return null;
     }
 
-    const scrollEl = findScrollContainer();
-    if (!scrollEl) {
-        console.warn("❌ Cannot find scroll container. Set CONFIG.SCROLL_CONTAINER_SELECTOR manually.");
+    const anyDomCell = document.querySelector(ITEM_SELECTOR);
+    if (!anyDomCell) {
+        console.warn(`❌ Cannot find any DOM elements with ITEM_SELECTOR="${ITEM_SELECTOR}"`);
         return;
+    }
+
+    let scrollEl = null;
+    if (SCROLL_CONTAINER_SELECTOR && SCROLL_CONTAINER_SELECTOR.trim() !== "") {
+        scrollEl = document.querySelector(SCROLL_CONTAINER_SELECTOR);
+        if (!scrollEl) {
+            console.warn(`❌ SCROLL_CONTAINER_SELECTOR was provided but not found: "${SCROLL_CONTAINER_SELECTOR}"`);
+            return;
+        }
+    } else {
+        scrollEl = findScrollContainer(anyDomCell);
+        if (!scrollEl) {
+            console.warn("❌ Auto-detect scroll container failed. Provide SCROLL_CONTAINER_SELECTOR manually.");
+            return;
+        }
     }
 
     // =========================
@@ -162,7 +264,7 @@
 
     function getRenderedRows() {
         // Lấy tất cả cell hiện đang render trong scroll container
-        const cells = Array.from(scrollEl.querySelectorAll(CONFIG.ITEM_SELECTOR));
+        const cells = Array.from(scrollEl.querySelectorAll(ITEM_SELECTOR));
         const rows = [];
         const seen = new Set();
 
@@ -184,23 +286,20 @@
     // Chúng ta cần index vì virtual table render theo viewport, row DOM không phải row 0..10 luôn luôn.
     // Nó là row nào đang visible.
     function getRowIndex(row) {
-        // Try data-index
-        const attr = CONFIG.ROW_INDEX_ATTR;
-
         // row có data-index="12" → index=12
         // row có data-row-index="0" → index=0
-        if (attr) {
-            const value = row.getAttribute(attr);
-            if (value != null && value !== "") return Number(value);
+        if (ROW_INDEX_ATTR) {
+            const value = row.getAttribute(ROW_INDEX_ATTR);
+            if (value !== null && value !== undefined && value !== "") return Number(value);
         }
 
         // fallback: try any data-index-like attribute
         for (const name of ["data-index", "data-row-index", "data-virtual-index"]) {
-            const v = row.getAttribute(name);
-            if (v != null && v !== "") return Number(v);
+            const value = row.getAttribute(name);
+            if (value !== null && value !== undefined && value !== "") return Number(value);
         }
 
-        // Nếu không có index attr → return null → row đó bị skip.
+        // Ngược lại không có thì row đó sẽ bị skip.
         return null;
     }
 
@@ -234,21 +333,21 @@
 
             const apiItem = apiList[index];
 
-            const status = CONFIG.GET_PATTERN_FIELD(apiItem);
-            const expected = normalize(CONFIG.MAPPING[status]);
+            const status = GET_PATTERN_FIELD(apiItem);
+            const expected = normalize(MAPPING[status]);
 
-            const cell = row.querySelector(CONFIG.ITEM_SELECTOR) || row;
+            const cell = row.querySelector(ITEM_SELECTOR) || row;
             const actual = normalize(cell.innerText || cell.textContent || "");
 
             if (!expected) {
-                row.style.cssText += `;${CONFIG.HIGHLIGHT_UNKNOWN_STYLE}`;
+                row.style.cssText += `;${HIGHLIGHT_UNKNOWN_STYLE}`;
                 row.title = `⚠️ No mapping for status=${status} (index=${index})`;
                 unknowns.push({ index, status, actual });
                 continue;
             }
 
             if (!compareText(actual, expected)) {
-                row.style.cssText += `;${CONFIG.HIGHLIGHT_WRONG_STYLE}`;
+                row.style.cssText += `;${HIGHLIGHT_WRONG_STYLE}`;
                 row.title = `❌ Index=${index}\nStatus=${status}\nExpected="${expected}"\nActual="${actual}"`;
                 invalids.push({ index, status, expected, actual });
             }
@@ -265,12 +364,12 @@
         scrollEl.scrollTop = 0;
 
         // Đợi DOM update xong rồi validate viewport đầu tiên
-        await sleep(CONFIG.SETTE_MS);
+        await sleep(SETTLE_MS);
         validateVisible();
 
         while (
             // + Không vượt quá maxLoops
-            loops++ < CONFIG.MAX_LOOP &&
+            loops++ < MAX_LOOP &&
             // + Chưa scroll đến cuối
             // - scrollTop: vị trí scroll hiện tại
             // - clientHeight: chiều cao phần visible
@@ -281,10 +380,10 @@
             checkedIndices.size < apiList.length
         ) {
             // Mỗi vòng scroll xuống bao nhiêu px
-            scrollEl.scrollTop += CONFIG.SCROLL_STEP;
+            scrollEl.scrollTop += SCROLL_STEP;
 
             // chờ virtual render row mới
-            await sleep(CONFIG.SETTE_MS);
+            await sleep(SETTLE_MS);
 
             // validate các row mới render
             validateVisible();
@@ -292,7 +391,7 @@
 
         // scroll đến đáy để chắc chắn
         scrollEl.scrollTop = scrollEl.scrollHeight;
-        await sleep(CONFIG.SETTE_MS);
+        await sleep(SETTLE_MS);
         validateVisible();
 
         console.group(
