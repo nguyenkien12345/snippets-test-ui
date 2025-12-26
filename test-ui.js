@@ -398,7 +398,6 @@
             `%c[VirtualValidator] checked=${checkedIndices.size}/${apiList.length} wrong=${invalids.length} unknown=${unknowns.length}`,
             invalids.length ? "color:#ff3b30;font-weight:800;" : "color:#1a7f37;font-weight:800;"
         );
-        console.log("Scroll container:", scrollEl);
         if (invalids.length) console.table(invalids);
         if (unknowns.length) console.table(unknowns);
 
