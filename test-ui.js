@@ -4,24 +4,15 @@
     // =========================
     const DEFAULT_CONFIG = {
         SCROLL_CONTAINER_SELECTOR: '',
-        COMPARE_MODE: "contains", // "exact" | "contains"
-        // + Phần quan trọng nhất trong virtual validator. Bạn phải có cách xác định:
-        // - Row DOM này đang đại diện cho item thứ mấy trong Api List
-        // + TanStack Virtual thường set:
-        // - data-index
-        // - style transform: translateY(...)
-        // + Ưu tiên đọc từ attribute
+        COMPARE_MODE: "exact", // "exact" | "contains"
         ROW_INDEX_ATTR: "data-index",
         HIGHLIGHT_WRONG_STYLE:
             "outline: 3px solid #ff3b30; box-shadow: 0 0 0 4px rgba(255,59,48,0.2); border-radius: 10px; padding: 10px",
         HIGHLIGHT_UNKNOWN_STYLE:
             "outline: 3px solid #ff9500; box-shadow: 0 0 0 4px rgba(255,149,0,0.18); border-radius: 10px; padding: 10px",
-        // Mỗi lần scroll xuống bao nhiêu px
-        SCROLL_STEP: 350,
-        // Scroll xong đợi bao lâu để DOM update (tanstack virtual cần thời gian render)
-        SETTLE_MS: 120,
-        // Giới hạn để tránh infinite loop nếu scroll container lạ
-        MAX_LOOP: 300,
+        SCROLL_STEP: 350, // Mỗi lần scroll xuống bao nhiêu px
+        SETTLE_MS: 120, // Scroll xong đợi bao lâu để DOM update (tanstack virtual cần thời gian render)
+        MAX_LOOP: 300,  // Giới hạn để tránh infinite loop nếu scroll container lạ
     };
 
     const normalize = (text = "") => text.toString().replace(/\s+/g, " ").trim();
@@ -85,7 +76,7 @@
 
         if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) return parsed;
 
-        alert("This JSON must be an object (e.g. { \"101\": \"text\" }).");
+        alert("This JSON must be an object (e.g. { 'STATUS=101': 'Sold' }).");
 
         return parseJsonObjectRequired(label, example);
     }
@@ -96,7 +87,10 @@
     const getByPath = (obj, path) => {
         if (!path) return obj;
 
-        const parts = path.split(".").map((p) => p.trim()).filter(Boolean);
+        const parts = path
+            .split(".")
+            .map((p) => p.trim())
+            .filter(Boolean);
 
         let cur = obj;
 
@@ -124,7 +118,7 @@
 
     const MAPPING = parseJsonObjectRequired(
         "3) Paste MAPPING JSON (statusCode -> expectedText)",
-        `{ "101": "即決落札可", "102": "成約", "201": "商談受付中" }`
+        `Đối với 1 field:\r\n {\r\n "STATUS=101": "即決落札可",\r\n "STATUS=102": "成約",\r\n "STATUS=103": "商談受付中"\r\n }\r\nĐối với từ 2 field trở lên:\r\n {\r\n "STATUS=201|OTHER=true": "Neg. (Other Co.)",\r\n "STATUS=201|OTHER=false": "Neg. (Your Co.)"\r\n }`
     );
     if (MAPPING === null || MAPPING === undefined) return;
 
@@ -135,8 +129,8 @@
     if (LIST_PATH === null || LIST_PATH === undefined) return;
 
     const STATUS_FIELD_PATH = promptRequired(
-        "5) Enter status field path in each list item (GET_PATTERN_FIELD)",
-        `STATUS \r\n status \r\n meta.status`
+        "5) Enter status field path in each list item",
+        `STATUS \r\n status \r\n meta.status \r\n STATUS,OTHER \r\n STATUS,OTHER,TYPE`
     );
     if (STATUS_FIELD_PATH === null || STATUS_FIELD_PATH === undefined) return;
 
@@ -177,8 +171,35 @@
     // =========================
     // Build functions from paths
     // =========================
+    // VD INPUT  => STATUS,OTHER,TYPE
+    // VD OUTPUT => ["STATUS", "OTHER", "TYPE"]
+    // fieldPaths chính là danh sách các đường dẫn field mà chúng ta muốn dùng để tạo key
+    const fieldPaths = STATUS_FIELD_PATH.split(",").map((s) => s.trim()).filter(Boolean);
+
     const GET_LIST_FROM_JSON = (json) => getByPath(json, LIST_PATH) || [];
-    const GET_PATTERN_FIELD = (apiItem) => (getByPath(apiItem, STATUS_FIELD_PATH));
+
+    // Compound Key Builder: STATUS=201|OTHER=true|TYPE=A
+    const BUILD_COMPOUND_KEY = (apiItem) => {
+        return fieldPaths
+            .map((path) => {
+                // - apiItem là 1 object trong response list api
+                // - path là tên field hoặc path sâu như "meta.status"
+                const raw = getByPath(apiItem, path);
+
+                // VD: apiItem = { STATUS: 201, OTHER: true, TYPE: "A" }
+                // getByPath(apiItem, "STATUS") → 201
+                // getByPath(apiItem, "OTHER") → true
+                // getByPath(apiItem, "TYPE") → "A"
+
+                const value =
+                    raw === null ? "null" : raw === undefined ? "undefined" : String(raw).trim();
+                return `${path}=${value}`;
+            })
+            .join("|");
+
+        // ["STATUS=201", "OTHER=true", "TYPE=A"].join("|")
+        // => "STATUS=201|OTHER=true|TYPE=A" => Đây chính là compoundKey
+    };
 
     // =========================
     // Extract list array
@@ -209,12 +230,6 @@
         // Đi lên cha (parent) cho đến khi gặp element có thể scroll
         let el = cellElement.parentElement;
         while (el && el !== document.body) {
-            // Script sẽ kiểm tra:
-            // + overflowY là auto hoặc scroll
-            // + scrollHeight > clientHeight + 10
-            // => Nếu thoả 2 điều kiện trên đó là scroll container.
-            // => Bắt buộc phải check scrollHeight vì có overflow auto nhưng không thật sự scroll (nội dung nhỏ)
-
             const style = getComputedStyle(el);
             const overflowY = style.overflowY;
 
@@ -252,28 +267,25 @@
     // Helpers to find rows
     // =========================
     function findRowFromCell(cell) {
-        // prefer tr for table; else find something that looks like a row
         return (
             cell.closest("tr") ||
             cell.closest('[role="row"]') ||
             cell.closest(".row") ||
             cell.closest("[data-index]") ||
+            cell.closest(`[${ROW_INDEX_ATTR}]`) ||
             cell.parentElement
         );
     }
 
     function getRenderedRows() {
-        // Lấy tất cả cell hiện đang render trong scroll container
         const cells = Array.from(scrollEl.querySelectorAll(ITEM_SELECTOR));
         const rows = [];
         const seen = new Set();
 
-        // map mỗi cell → row
         for (const cell of cells) {
             const row = findRowFromCell(cell);
             if (!row) continue;
 
-            // Dùng seen để tránh duplicate (vì 1 row có thể chứa nhiều .price)
             if (seen.has(row)) continue;
 
             seen.add(row);
@@ -283,11 +295,7 @@
         return rows;
     }
 
-    // Chúng ta cần index vì virtual table render theo viewport, row DOM không phải row 0..10 luôn luôn.
-    // Nó là row nào đang visible.
     function getRowIndex(row) {
-        // row có data-index="12" → index=12
-        // row có data-row-index="0" → index=0
         if (ROW_INDEX_ATTR) {
             const value = row.getAttribute(ROW_INDEX_ATTR);
             if (value !== null && value !== undefined && value !== "") return Number(value);
@@ -299,7 +307,6 @@
             if (value !== null && value !== undefined && value !== "") return Number(value);
         }
 
-        // Ngược lại không có thì row đó sẽ bị skip.
         return null;
     }
 
@@ -309,6 +316,7 @@
     const invalids = [];
     const unknowns = [];
     const checkedIndices = new Set();
+    const keySamples = []; // for debugging mapping
 
     function validateVisible() {
         const rows = getRenderedRows();
@@ -316,40 +324,35 @@
         for (const row of rows) {
             const index = getRowIndex(row);
 
-            // Row không có index thì bỏ qua
             if (index === null || index === undefined || Number.isNaN(index)) continue;
-
-            // index không nằm trong range list thì bỏ qua
             if (index < 0 || index >= apiList.length) continue;
 
-            // index đã check bị trùng lặp thì bỏ qua
-            // Vì khi scroll, row index 0 có thể render lại nhiều lần (scroll lên xuống).
-            // Nếu validate lại thì:
-            // - Tốn thời gian
-            // - Highlight lại
-            // - Duplicate report
             if (checkedIndices.has(index)) continue;
             checkedIndices.add(index);
 
             const apiItem = apiList[index];
 
-            const status = GET_PATTERN_FIELD(apiItem);
-            const expected = normalize(MAPPING[status]);
+            const compoundKey = BUILD_COMPOUND_KEY(apiItem);
+            const expectedText = MAPPING[compoundKey];
 
             const cell = row.querySelector(ITEM_SELECTOR) || row;
-            const actual = normalize(cell.innerText || cell.textContent || "");
+            const actualText = normalize(cell.innerText || cell.textContent || "");
 
-            if (!expected) {
+            if (keySamples.length < 8) {
+                keySamples.push({ index, compoundKey, actualText });
+            }
+
+            if (!expectedText) {
                 row.style.cssText += `;${DEFAULT_CONFIG.HIGHLIGHT_UNKNOWN_STYLE}`;
-                row.title = `⚠️ No mapping for status=${status} (index=${index})`;
-                unknowns.push({ index, status, actual });
+                row.title = `⚠️ Unknown mapping key\nIndex=${index}\nKey=${compoundKey}\nActual="${actualText}"`;
+                unknowns.push({ index, compoundKey, actualText });
                 continue;
             }
 
-            if (!compareText(actual, expected)) {
+            if (!compareText(actualText, expectedText)) {
                 row.style.cssText += `;${DEFAULT_CONFIG.HIGHLIGHT_WRONG_STYLE}`;
-                row.title = `❌ Index=${index}\nStatus=${status}\nExpected="${expected}"\nActual="${actual}"`;
-                invalids.push({ index, status, expected, actual });
+                row.title = `❌ Wrong text\nIndex=${index}\nKey=${compoundKey}\nExpected="${expectedText}"\nActual="${actualText}"`;
+                invalids.push({ index, compoundKey, expectedText, actualText });
             }
         }
     }
@@ -360,10 +363,7 @@
     let loops = 0;
 
     async function run() {
-        // Đảm bảo check từ đầu list
         scrollEl.scrollTop = 0;
-
-        // Đợi DOM update xong rồi validate viewport đầu tiên
         await sleep(SETTLE_MS);
         validateVisible();
 
@@ -379,34 +379,51 @@
             // Chưa check đủ tất cả index
             checkedIndices.size < apiList.length
         ) {
-            // Mỗi vòng scroll xuống bao nhiêu px
             scrollEl.scrollTop += SCROLL_STEP;
-
-            // chờ virtual render row mới
             await sleep(SETTLE_MS);
-
-            // validate các row mới render
             validateVisible();
         }
 
-        // scroll đến đáy để chắc chắn
+        // scroll xuống dưới đáy để chắc chắn
         scrollEl.scrollTop = scrollEl.scrollHeight;
         await sleep(SETTLE_MS);
         validateVisible();
 
         console.group(
-            `%c[VirtualValidator] checked=${checkedIndices.size}/${apiList.length} wrong=${invalids.length} unknown=${unknowns.length}`,
+            `%c[VirtualValidator Multi-field] checked=${checkedIndices.size}/${apiList.length} wrong=${invalids.length} unknown=${unknowns.length}`,
             invalids.length ? "color:#ff3b30;font-weight:800;" : "color:#1a7f37;font-weight:800;"
         );
-        if (invalids.length) console.table(invalids);
-        if (unknowns.length) console.table(unknowns);
+
+        if (invalids.length) {
+            console.group(`❌ Wrong items (${invalids.length})`);
+            console.table(invalids);
+            console.groupEnd();
+        }
+
+        if (unknowns.length) {
+            console.group(`⚠️ Unknown mapping keys (${unknowns.length})`);
+            console.table(unknowns);
+            console.groupEnd();
+
+            console.warn(
+                "Tip: Copy one compoundKey from this table and add it to your MAPPING."
+            );
+        }
+
+        // console.group("Key samples (debug mapping)");
+        // console.table(keySamples);
+        // console.groupEnd();
 
         if (checkedIndices.size < apiList.length) {
             console.warn(
                 `⚠️ Not all rows were checked. Checked=${checkedIndices.size}/${apiList.length}.
-Possible reasons: rows don't have data-index, or row detection failed.`
+                Possible reasons:
+                - Your rows do not contain "${ROW_INDEX_ATTR}" attribute
+                - Row detection failed (try adjusting ITEM_SELECTOR)
+                - Your scroll container is not correct (set SCROLL_CONTAINER_SELECTOR manually)`
             );
         }
+
         console.groupEnd();
     }
 
@@ -415,53 +432,4 @@ Possible reasons: rows don't have data-index, or row detection failed.`
     }
 
     run();
-
-    // Tạo ra một chuỗi CSS selector sao cho bạn có thể dùng selector đó để tìm lại đúng element đó bằng document.querySelector(...).
-    // Ví dụ output: html > body > div:nth-of-type(2) > ul > li:nth-of-type(3) > span
-
-    // 3 việc chính:
-    // - Đi từ element bạn đưa vào, đi ngược lên cha (parent)
-    // - Mỗi bước, nó tạo ra selector cho element hiện tại:
-    //      - Dùng tag name (div, span, tr...)
-    //      - Nếu element có id → dùng luôn #id (vì id gần như unique)
-    //      - Nếu không có id → thêm :nth-of-type(n) khi cần để phân biệt với anh em cùng tag
-    function getCssPath(element) {
-        if (!element || !(element instanceof Element)) return "";
-
-        // Chứa các đoạn selector
-        const path = [];
-
-        // Loop chạy cho đến khi el = null (đến top) hoặc không phải element node
-        while (element && element.nodeType === Node.ELEMENT_NODE) {
-            let selector = element.nodeName.toLowerCase(); // Chính là các thẻ tagName (VD: "div", "span", "p",...)
-
-            if (element.id) {
-                // CSS.escape(...) để xử lý id có ký tự đặc biệt (: . [ ] …)
-                selector += `#${CSS.escape(element.id)}`;
-                // Add vào đầu mảng (vì bạn build từ con lên cha)
-                path.unshift(selector);
-                // selector có id đủ unique để tìm đúng rồi, quá đủ chính xác, không cần đi lên tới <html> nữa
-                break;
-            } else {
-                // Lấy tất cả con trực tiếp của parent, sau đó lọc ra những thằng cùng tag name với element hiện tại
-                const siblings = element.parentNode
-                    ? Array.from(element.parentNode.children).filter((e) => e.nodeName === element.nodeName)
-                    : [];
-
-                // Nếu chỉ có 1 sibling cùng tag thì không cần nth-of-type
-                if (siblings.length > 1) {
-                    const index = siblings.indexOf(element) + 1;
-                    selector += `:nth-of-type(${index})`;
-                }
-            }
-            // Add vào đầu mảng (vì bạn build từ con lên cha). Trong khi ta đi từ con lên cha, ta lại muốn kết quả final là cha > con.
-            path.unshift(selector);
-            // đi lên 1 tầng và tiếp tục loop
-            element = element.parentElement;
-        }
-
-        // join bằng > thành CSS path đầy đủ
-        // VD: ["div:nth-of-type(2)", "ul", "li:nth-of-type(3)", "span"] => div:nth-of-type(2) > ul > li:nth-of-type(3) > span
-        return path.join(" > ");
-    }
 })();
