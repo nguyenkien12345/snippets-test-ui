@@ -67,7 +67,7 @@
         while (true) {
             const text = promptRequired(label, example);
 
-            if (input === null || input === undefined) return null;
+            if (text === null || text === undefined) return null;
 
             try {
                 const parsed = JSON.parse(text);
@@ -340,14 +340,14 @@
             const actual = normalize(cell.innerText || cell.textContent || "");
 
             if (!expected) {
-                row.style.cssText += `;${HIGHLIGHT_UNKNOWN_STYLE}`;
+                row.style.cssText += `;${DEFAULT_CONFIG.HIGHLIGHT_UNKNOWN_STYLE}`;
                 row.title = `⚠️ No mapping for status=${status} (index=${index})`;
                 unknowns.push({ index, status, actual });
                 continue;
             }
 
             if (!compareText(actual, expected)) {
-                row.style.cssText += `;${HIGHLIGHT_WRONG_STYLE}`;
+                row.style.cssText += `;${DEFAULT_CONFIG.HIGHLIGHT_WRONG_STYLE}`;
                 row.title = `❌ Index=${index}\nStatus=${status}\nExpected="${expected}"\nActual="${actual}"`;
                 invalids.push({ index, status, expected, actual });
             }
